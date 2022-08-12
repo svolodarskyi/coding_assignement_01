@@ -1,7 +1,14 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC 
+# MAGIC ### Import Libraries
+
+# COMMAND ----------
+
 from pyspark.sql.functions import current_timestamp, upper, lower, row_number, col, when, lit, asc, avg, round, max, expr
 from pyspark.sql.dataframe import DataFrame
 from typing import List
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, TimestampType
 from pyspark.sql.window import Window
 import re
 import os
@@ -20,14 +27,14 @@ def create_database(spark, dbname: str, dbpath: str) -> None:
   
 def load_csv_files(folder_path: str) -> DataFrame:
   folder_path = folder_path + "/" if not folder_path.endswith('/') else folder_path
-  return spark.read.csv(f"file:{folder_path}*.csv", sep = ',', header=True) 
+  return spark.read.csv(f"{folder_path}*.csv", sep = ',', header=True) 
 
 def get_table_name_from_path(path: str) -> str:
   return path[path.rfind('/') + 1:]
   
 def register_table(spark, dbname: str, tblname: str, location: str, schema: str = None) -> None:
   schema = " " if schema is None else f"({schema})"
-  spark.sql(f""" CREATE TABLE IF NOT EXISTS {dbname}.{tblname} ({schema}) USING DELTA LOCATION '{location}' """)
+  spark.sql(f""" CREATE TABLE IF NOT EXISTS {dbname}.{tblname} {schema} USING DELTA LOCATION '{location}' """)
   
 def load_bronze(spark, df: DataFrame, location: str) -> None:
   df.write.format("delta").mode("append").option("mergeSchema", "true").save(location)
@@ -90,19 +97,17 @@ def load_gold(spark, df: DataFrame, location: str) -> None:
 
 # COMMAND ----------
 
-src_files_path = os.getcwd() + '/data/'
+src_files_path = 'dbfs:/FileStore/tables/sergii/daycare_analysis_project/'
 
 dbpath = 'dbfs:/temp/'
-dbname = 'daycare_numbers'
+dbname = 'daycare_numbers_sv'
 
 bronze_path = f"""{dbpath}/{dbname}/attendance_bronze"""
 silver_path = f"""{dbpath}/{dbname}/attendance_silver"""
 gold_path_max_attendance = f"""{dbpath}/{dbname}/max_attendance_by_time"""
 gold_path_avg_attendance = f"""{dbpath}/{dbname}/avg_attendance_by_day_and_time"""
 
-# COMMAND ----------
-
-# %sql DROP DATABASE daycare_numbers CASCADE
+silver_shema = "day STRING, date STRING, hours STRING, attendance_count INT, silver_loaded_timestamp_utc TIMESTAMP"
 
 # COMMAND ----------
 
@@ -208,7 +213,7 @@ register_table(
         dbname = dbname, 
         tblname = get_table_name_from_path(silver_path), 
         location = silver_path, 
-        schema = None
+        schema = silver_shema
       )  
 
 # COMMAND ----------
@@ -258,6 +263,38 @@ register_table(
                location = gold_path_avg_attendance, 
                schema = None
           )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ### Analyze Gold Tables
+
+# COMMAND ----------
+
+# MAGIC %sql SELECT * FROM daycare_numbers_sv.avg_attendance_by_day_and_time;
+
+# COMMAND ----------
+
+# MAGIC %sql SELECT * FROM daycare_numbers_sv.max_attendance_by_time
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC 
+# MAGIC ### Cleanup Resources
+
+# COMMAND ----------
+
+# Drop Databse
+
+# spark.sql(f"""DROP DATABASE {dbname} CASCADE;""")
+
+# COMMAND ----------
+
+# Remove Source Files
+
+# dbutils.fs.rm('dbfs:/FileStore/tables/sergii/daycare_analysis_project/', True)
 
 # COMMAND ----------
 
